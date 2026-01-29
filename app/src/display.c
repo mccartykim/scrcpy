@@ -34,8 +34,34 @@ sc_display_init(struct sc_display *display, SDL_Window *window,
     display->renderer =
         SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!display->renderer) {
+#ifdef __APPLE__
+        // Workaround for SDL software renderer bug on macOS
+        // The software renderer has known issues with YV12 texture updates
+        // from ARM64 Android emulators, displaying visual corruption.
+        // Force Metal or OpenGL renderer instead of falling back to software.
+        LOGW("Could not create accelerated renderer: %s", SDL_GetError());
+        LOGI("Trying Metal renderer (software renderer has known issues on macOS)");
+        
+        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "metal");
+        display->renderer = SDL_CreateRenderer(window, -1, 0);
+        
+        if (!display->renderer) {
+            LOGW("Could not create Metal renderer: %s", SDL_GetError());
+            LOGI("Trying OpenGL renderer");
+            
+            SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
+            display->renderer = SDL_CreateRenderer(window, -1, 0);
+        }
+        
+        if (!display->renderer) {
+            LOGE("Could not create any renderer (tried accelerated, Metal, OpenGL): %s",
+                 SDL_GetError());
+            return false;
+        }
+#else
         LOGE("Could not create renderer: %s", SDL_GetError());
         return false;
+#endif
     }
 
     SDL_RendererInfo renderer_info;
